@@ -1,0 +1,122 @@
+# RAG with pgvector Design
+
+## Overview
+
+Hub-AIのデータ提供方式を「全データMarkdown送信（~25Kトークン/回）」から「pgvectorベースのRAG検索（~3-5Kトークン/回）」に移行する。
+
+## Decision Record
+
+| 項目 | 決定 |
+|------|------|
+| Embeddingモデル | OpenAI text-embedding-3-large (3072次元) |
+| ストレージ | Supabase pgvector (統合テーブル方式) |
+| 対象データ | 全データ (memo, journal, gmail, task, media_feed, project, client) |
+| 生成タイミング | Edge Functionでリアルタイム (DB Webhook Trigger) |
+| コスト試算 | 初回~$0.13, 月額~$0.02 |
+
+## Architecture
+
+データ変更時:
+  Supabase DB Webhook (INSERT/UPDATE)
+      -> Edge Function: generate_embedding
+      -> OpenAI text-embedding-3-large -> vector(3072)
+      -> document_embeddings テーブルに UPSERT
+
+AI Chat時:
+  ユーザー質問
+      -> Edge Function: ai_hub_chat (改修)
+      -> 1. 質問をembedding化 (OpenAI)
+         2. match_documents() で関連データ上位10件取得
+         3. 軽量サマリー + 検索結果をコンテキストに (~3-5Kトークン)
+         4. AIプロバイダーへ送信
+      -> 回答
+
+## Database Schema
+
+### pgvector Extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+### document_embeddings Table
+CREATE TABLE document_embeddings (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  source_type TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  content_text TEXT NOT NULL,
+  embedding vector(3072) NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(user_id, source_type, source_id)
+);
+
+CREATE INDEX idx_embeddings_user ON document_embeddings(user_id, source_type);
+CREATE INDEX idx_embeddings_vector ON document_embeddings
+  USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+### RLS Policy
+ALTER TABLE document_embeddings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own embeddings"
+  ON document_embeddings FOR ALL USING (auth.uid() = user_id);
+
+### match_documents Function
+CREATE FUNCTION match_documents(
+  query_embedding vector(3072),
+  match_user_id UUID,
+  match_count INT DEFAULT 10,
+  match_threshold FLOAT DEFAULT 0.3
+)
+RETURNS TABLE (
+  id UUID, source_type TEXT, source_id TEXT,
+  content_text TEXT, metadata JSONB, similarity FLOAT
+)
+LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN QUERY
+  SELECT de.id, de.source_type, de.source_id,
+         de.content_text, de.metadata,
+         1 - (de.embedding <=> query_embedding) AS similarity
+  FROM document_embeddings de
+  WHERE de.user_id = match_user_id
+    AND 1 - (de.embedding <=> query_embedding) > match_threshold
+  ORDER BY de.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+## Edge Functions
+
+### generate_embedding (New)
+- Trigger: DB Webhook on INSERT/UPDATE of target tables
+- Input: { source_type, source_id, content, metadata }
+- Process: Call OpenAI embedding API -> UPSERT to document_embeddings
+- Target tables: memos, journal_entries, google_gmail_messages, tasks, media_feed_items, projects, clients
+
+### ai_hub_chat (Modified)
+- Remove: Full data context from frontend (~25K tokens)
+- Add: Query embedding -> match_documents() -> top 10 results
+- Context: Lightweight summary + RAG results (~3-5K tokens)
+
+## Frontend Changes
+
+### useAiChat.ts
+- Remove: fetchAllData() bulk data loading
+- Remove: formatDataContext() full markdown formatting
+- Add: Lightweight summary only (profile, today's schedule, task counts)
+- RAG search happens server-side in Edge Function
+
+## Data Source Mapping
+
+| Source | Table | Text Fields | Content Template |
+|--------|-------|------------|-----------------|
+| memo | memos | title, content | {title}: {content} |
+| journal | journal_entries | title, content | {entry_date} {title}: {content} |
+| gmail | google_gmail_messages | subject, body_text | From:{sender} Subject:{subject} {body_text} |
+| task | tasks | title, notes | {title} (due:{due_date}): {notes} |
+| media_feed | media_feed_items | title, body | [{source}] {title}: {body} |
+| project | projects | name, description | {name}: {description} |
+| client | clients | name, notes | {name}: {notes} |
+
+## Backfill Strategy
+
+Initial embedding of all existing data via a one-time Edge Function call that processes each table sequentially.

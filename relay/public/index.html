@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Company Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Noto+Sans+JP:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root { font-family: 'JetBrains Mono', 'Noto Sans JP', monospace; }
+    body { background: #07070f; }
+    @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.25} }
+    .anim-pulse      { animation: pulse-dot 1.2s ease-in-out infinite; }
+    .anim-pulse-fast { animation: pulse-dot 0.6s ease-in-out infinite; }
+    @keyframes blink { 50%{opacity:0} }
+    .cursor::after { content:"▊"; animation:blink 1s step-end infinite; font-size:0.7em; }
+    @keyframes slideIn { from{transform:translateX(110%);opacity:0} to{transform:translateX(0);opacity:1} }
+    .toast { animation: slideIn 0.25s ease; }
+    .agent-card { transition: box-shadow 0.15s, border-color 0.15s; }
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    .post-card { animation: fadeUp 0.2s ease; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-300 select-none">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-40 flex items-center justify-between px-5 py-2.5
+                 bg-[#0a0a16] border-b border-slate-800/60 backdrop-blur">
+    <div class="flex items-center gap-3">
+      <span class="text-purple-400 text-base" aria-hidden="true">&#127970;</span>
+      <span class="text-slate-100 font-bold tracking-widest text-xs">AI COMPANY</span>
+      <span class="text-slate-600 text-xs">/ dashboard</span>
+      <div id="health-dot" class="w-1.5 h-1.5 rounded-full bg-slate-600 ml-1" role="status" aria-label="サーバー状態"></div>
+      <span id="health-text" class="text-xs text-slate-600" aria-live="polite">connecting…</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="clock" class="text-xs text-slate-600 tabular-nums mr-2" aria-hidden="true"></span>
+      <button
+        onclick="setToken()"
+        class="text-xs text-slate-500 hover:text-slate-300 px-2 py-1 rounded border border-slate-700/60 hover:border-slate-600 transition-colors"
+        aria-label="認証トークン設定"
+      >&#9881; token</button>
+      <button
+        onclick="resetAll()"
+        class="text-xs text-red-600 hover:text-red-400 px-2 py-1 rounded border border-red-900/50 hover:border-red-700 transition-colors"
+        aria-label="全リセット"
+      >&#8634; reset</button>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <div class="grid grid-cols-12 h-[calc(100vh-41px)]">
+
+    <!-- Left: Agents -->
+    <aside class="col-span-3 border-r border-slate-800/60 flex flex-col overflow-hidden" aria-label="エージェント一覧">
+      <div class="px-4 py-2 border-b border-slate-800/40">
+        <span class="text-xs text-slate-600 uppercase tracking-widest">Agents</span>
+      </div>
+      <div id="agents-grid" class="flex-1 overflow-y-auto p-3 space-y-4" role="list"></div>
+    </aside>
+
+    <!-- Middle: Feed / Claude Code (tabbed) -->
+    <main class="col-span-5 border-r border-slate-800/60 flex flex-col overflow-hidden" aria-label="メインパネル">
+
+      <!-- Tab bar -->
+      <div class="flex-shrink-0 border-b border-slate-800/40 flex items-center" role="tablist">
+        <button id="tab-feed" role="tab" aria-selected="true" aria-controls="panel-feed"
+          onclick="switchTab('feed')"
+          class="px-4 py-2 text-xs text-slate-400 border-b-2 border-purple-500 transition-colors whitespace-nowrap">
+          Activity Feed
+        </button>
+        <button id="tab-claude" role="tab" aria-selected="false" aria-controls="panel-claude"
+          onclick="switchTab('claude')"
+          class="px-4 py-2 text-xs text-slate-600 border-b-2 border-transparent hover:text-slate-500 transition-colors whitespace-nowrap">
+          Claude Code
+        </button>
+        <span id="msg-count" class="text-xs text-slate-700 tabular-nums ml-auto mr-3" aria-live="polite">0</span>
+      </div>
+
+      <!-- Activity Feed panel -->
+      <div id="panel-feed" class="flex-1 flex flex-col overflow-hidden min-h-0" role="tabpanel" aria-labelledby="tab-feed">
+        <!-- SSE output -->
+        <div id="sse-panel" class="hidden flex-shrink-0 border-b border-slate-800/60 bg-[#0a0a14]" aria-live="polite">
+          <div class="flex items-center justify-between px-3 py-1.5">
+            <span class="text-xs text-purple-500">&#9654; orchestrate</span>
+            <button onclick="closeSsePanel()" class="text-slate-600 hover:text-slate-400 text-xs transition-colors" aria-label="閉じる">&#10005;</button>
+          </div>
+          <div id="sse-lines" class="px-3 pb-2 space-y-0.5 max-h-36 overflow-y-auto text-xs font-mono"></div>
+        </div>
+
+        <div id="feed" class="flex-1 overflow-y-auto px-4 py-3 space-y-3" role="log" aria-live="polite" aria-label="メッセージ一覧"></div>
+
+        <!-- Orchestrate bar -->
+        <div class="flex-shrink-0 border-t border-slate-800/60 p-3">
+          <div class="flex gap-2" role="group" aria-label="オーケストレーション">
+            <label for="target-group" class="sr-only">対象グループ</label>
+            <select
+              id="target-group"
+              class="bg-slate-900 text-slate-400 text-xs border border-slate-700/60 rounded px-2 py-1.5 focus:outline-none focus:border-purple-600"
+            >
+              <option value="">全グループ</option>
+              <option value="tech">tech</option>
+              <option value="pr">PR</option>
+              <option value="operations">ops</option>
+            </select>
+            <label for="task-input" class="sr-only">タスク</label>
+            <input
+              id="task-input"
+              type="text"
+              placeholder="タスクを入力… (Enter)"
+              class="flex-1 bg-slate-900/80 text-slate-200 text-xs border border-slate-700/60 rounded px-3 py-1.5
+                     placeholder-slate-700 focus:outline-none focus:border-purple-600 transition-colors"
+              onkeydown="if(event.key==='Enter') orchestrate()"
+            />
+            <button
+              id="orch-btn"
+              onclick="orchestrate()"
+              class="bg-purple-700 hover:bg-purple-600 disabled:bg-purple-900 disabled:cursor-not-allowed
+                     text-white text-xs px-3 py-1.5 rounded transition-colors"
+              aria-label="オーケストレーション実行"
+            >GO &#8594;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Claude Code panel -->
+      <div id="panel-claude" class="hidden flex-1 flex flex-col overflow-hidden min-h-0" role="tabpanel" aria-labelledby="tab-claude">
+        <div id="claude-output" class="flex-1 overflow-y-auto p-3 space-y-4 font-mono text-xs"
+             aria-live="polite" aria-label="Claude Code出力">
+          <!-- welcome hint -->
+          <div id="claude-welcome" class="text-slate-700 leading-relaxed space-y-1 mt-4 px-1">
+            <div>$ claude-code --relay</div>
+            <div class="text-slate-800">─────────────────────────────</div>
+            <div>プロンプトを入力してください。</div>
+            <div class="text-slate-800">セッションは会話を継続します。</div>
+          </div>
+        </div>
+        <!-- Session info + input -->
+        <div class="flex-shrink-0 border-t border-slate-800/60 p-3 space-y-2">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-slate-700 flex-shrink-0">session</span>
+            <span id="claude-session-id"
+              class="text-slate-700 font-mono truncate flex-1 select-all cursor-text"
+              title="クリックしてセッションIDをコピー">—</span>
+            <button onclick="clearClaude()"
+              class="text-slate-700 hover:text-slate-500 px-2 py-0.5 rounded border border-slate-800/60 hover:border-slate-700 transition-colors flex-shrink-0"
+              aria-label="セッションをクリア">✕ clear</button>
+          </div>
+          <div class="flex gap-2">
+            <label for="claude-input" class="sr-only">Claude Codeプロンプト</label>
+            <input
+              id="claude-input"
+              type="text"
+              placeholder="プロンプト… (Enter)"
+              class="flex-1 bg-slate-900/80 text-slate-200 text-xs border border-slate-700/60 rounded px-3 py-1.5
+                     placeholder-slate-700 focus:outline-none focus:border-purple-600 transition-colors"
+              onkeydown="if(event.key==='Enter') runClaude()"
+              aria-label="Claude Codeプロンプト入力"
+            />
+            <button
+              id="claude-run-btn"
+              onclick="runClaude()"
+              class="bg-purple-700 hover:bg-purple-600 disabled:bg-purple-900 disabled:cursor-not-allowed
+                     text-white text-xs px-3 py-1.5 rounded transition-colors"
+              aria-label="Claude Code実行">RUN &#8594;</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Right: Posts -->
+    <aside class="col-span-4 flex flex-col overflow-hidden" aria-label="生成済み投稿">
+      <div class="px-4 py-2 border-b border-slate-800/40 flex items-center justify-between flex-shrink-0">
+        <span class="text-xs text-slate-600 uppercase tracking-widest">Posts</span>
+        <button onclick="resetPosts()" class="text-xs text-slate-700 hover:text-slate-500 transition-colors" aria-label="投稿をクリア">clear</button>
+      </div>
+      <div class="flex-shrink-0 px-3 py-2 border-b border-slate-800/40">
+        <div class="flex gap-2" role="group" aria-label="投稿生成">
+          <label for="post-topic" class="sr-only">投稿トピック</label>
+          <input
+            id="post-topic"
+            type="text"
+            placeholder="投稿トピック… (Enter)"
+            class="flex-1 bg-slate-900/80 text-slate-200 text-xs border border-slate-700/60 rounded px-3 py-1.5
+                   placeholder-slate-700 focus:outline-none focus:border-pink-600 transition-colors"
+            onkeydown="if(event.key==='Enter') generatePosts()"
+          />
+          <button
+            onclick="generatePosts()"
+            class="bg-pink-800 hover:bg-pink-700 text-white text-xs px-3 py-1.5 rounded transition-colors"
+            aria-label="投稿生成"
+          >&#10022; gen</button>
+        </div>
+      </div>
+      <div id="posts-list" class="flex-1 overflow-y-auto p-3 space-y-3" role="list" aria-label="投稿一覧">
+        <p id="posts-empty" class="text-center text-slate-700 text-xs mt-10">投稿を生成してください</p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toasts" class="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none" aria-live="assertive"></div>
+
+  <script>
+    "use strict";
+
+    // ── Config ────────────────────────────────────────────────────────────
+    const BASE  = window.location.origin;
+    let   token = localStorage.getItem('relay-token') ?? '';
+
+    const ACCENT = {
+      'pm':         '#4a90d9',
+      'lead-eng':   '#00ff88',
+      'frontend':   '#c084fc',
+      'backend':    '#f59e0b',
+      'infra':      '#06b6d4',
+      'pr-manager': '#ef4444',
+      'writer':     '#a78bfa',
+      'sns':        '#ec4899',
+      'accountant': '#10b981',
+      'general':    '#f97316',
+    };
+
+    const STATUS_LABEL  = { idle:'idle', thinking:'思考中', working:'作業中', talking:'会話中' };
+    const GROUP_LABEL   = { tech:'TECH', pr:'PR', operations:'OPS' };
+    const PLATFORM_ICON = { x:'X', note:'N', general:'★' };
+    const PLATFORM_COL  = { x:'#1d9bf0', note:'#41c9b4', general:'#a78bfa' };
+
+    // ── DOM helpers (avoid innerHTML with external data) ──────────────────
+    function el(tag, cls, styles) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (styles) Object.assign(e.style, styles);
+      return e;
+    }
+
+    function txt(tag, cls, text, styles) {
+      const e = el(tag, cls, styles);
+      e.textContent = String(text ?? '');
+      return e;
+    }
+
+    function append(parent, ...children) {
+      for (const c of children.flat(Infinity)) {
+        if (c != null) parent.appendChild(c);
+      }
+      return parent;
+    }
+
+    // ── Auth / header ─────────────────────────────────────────────────────
+    function hdrs() {
+      const h = { 'Content-Type': 'application/json' };
+      if (token) h['Authorization'] = `Bearer ${token}`;
+      return h;
+    }
+
+    function setToken() {
+      const t = prompt('Auth Token（空欄 = なし）:', token);
+      if (t === null) return;
+      token = t.trim();
+      localStorage.setItem('relay-token', token);
+      toast('トークン更新', 'info');
+    }
+
+    // ── Clock ─────────────────────────────────────────────────────────────
+    function updateClock() {
+      const e = document.getElementById('clock');
+      if (e) e.textContent = new Date().toLocaleTimeString('ja-JP', { hour12: false });
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // ── Health ────────────────────────────────────────────────────────────
+    async function checkHealth() {
+      const dot = document.getElementById('health-dot');
+      const lbl = document.getElementById('health-text');
+      try {
+        const r = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(4000) });
+        if (r.ok) {
+          dot.className  = 'w-1.5 h-1.5 rounded-full bg-green-400 ml-1';
+          lbl.textContent = 'online';
+          lbl.className   = 'text-xs text-green-500';
+        } else throw new Error(String(r.status));
+      } catch {
+        dot.className  = 'w-1.5 h-1.5 rounded-full bg-red-500 ml-1 anim-pulse';
+        lbl.textContent = 'offline';
+        lbl.className   = 'text-xs text-red-600';
+      }
+    }
+
+    // ── Agents ────────────────────────────────────────────────────────────
+    let agentList = [];
+    let selectedAgentId = null;
+
+    function renderAgents(data) {
+      agentList = data;
+      const grid = document.getElementById('agents-grid');
+
+      const groups = {};
+      for (const a of data) {
+        if (!groups[a.group]) groups[a.group] = [];
+        groups[a.group].push(a);
+      }
+
+      grid.textContent = '';
+      for (const [grp, members] of Object.entries(groups)) {
+        const section = el('div');
+        section.appendChild(txt('div', 'text-xs text-slate-700 uppercase tracking-widest mb-2 px-0.5', GROUP_LABEL[grp] ?? grp));
+        for (const a of members) section.appendChild(buildAgentCard(a));
+        grid.appendChild(section);
+      }
+    }
+
+    function buildAgentCard(agent) {
+      const accent    = ACCENT[agent.id] ?? '#64748b';
+      const state     = agent.state ?? { status: 'idle', currentTask: null };
+      const isSelected = selectedAgentId === agent.id;
+      const animClass = { thinking:'anim-pulse', working:'anim-pulse-fast', talking:'anim-pulse' }[state.status] ?? '';
+
+      const card = el('div', 'agent-card cursor-pointer rounded p-2.5 mb-1.5 border bg-slate-900/40 hover:bg-slate-900/70 transition-colors');
+      card.id = `agent-${agent.id}`;
+      card.setAttribute('role', 'listitem');
+      card.setAttribute('aria-label', `${agent.name} - ${agent.role}`);
+      card.style.borderColor = isSelected ? accent : 'rgba(51,65,85,0.4)';
+      card.style.boxShadow   = isSelected ? `0 0 14px ${accent}28` : '';
+
+      // Header row
+      const header = el('div', 'flex items-center justify-between mb-0.5');
+      const nameGrp = el('div', 'flex items-center gap-1.5 min-w-0');
+
+      const dot = el('div', `w-2 h-2 rounded-full flex-shrink-0 ${animClass}`);
+      dot.style.background = accent;
+
+      const nameSpan = txt('span', 'text-xs font-medium text-slate-200 truncate', agent.name);
+      append(nameGrp, dot, nameSpan);
+
+      const statusSpan = txt('span', 'text-slate-500 flex-shrink-0 ml-1', STATUS_LABEL[state.status] ?? state.status);
+      statusSpan.style.color    = `${accent}aa`;
+      statusSpan.style.fontSize = '10px';
+
+      append(header, nameGrp, statusSpan);
+
+      const roleDiv = txt('div', 'text-slate-600 truncate', agent.role);
+      roleDiv.style.fontSize = '10px';
+
+      append(card, header, roleDiv);
+
+      if (state.currentTask) {
+        const taskDiv = txt('div', 'mt-1 truncate', `▶ ${state.currentTask}`);
+        taskDiv.style.fontSize = '10px';
+        taskDiv.style.color    = `${accent}99`;
+        card.appendChild(taskDiv);
+      }
+
+      card.onclick = () => openChat(agent.id, agent.name, accent);
+      return card;
+    }
+
+    function refreshAgentCards() {
+      for (const a of agentList) {
+        const old = document.getElementById(`agent-${a.id}`);
+        if (!old) continue;
+        old.replaceWith(buildAgentCard(a));
+      }
+    }
+
+    // ── Messages ──────────────────────────────────────────────────────────
+    const seenIds = new Set();
+    let msgTotal  = 0;
+
+    function renderMessages(messages, events, agentData) {
+      const feed  = document.getElementById('feed');
+      const count = document.getElementById('msg-count');
+      const aMap  = Object.fromEntries((agentData ?? []).map(a => [a.id, a]));
+
+      const combined = [
+        ...messages.map(m => ({ ...m, _k: 'msg' })),
+        ...events.map(e => ({ ...e, id: `evt-${e.agentId}-${e.timestamp}`, _k: 'evt' })),
+      ].sort((a, b) => a.timestamp - b.timestamp);
+
+      let added = false;
+      for (const item of combined) {
+        if (seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+        msgTotal++;
+        feed.appendChild(item._k === 'msg' ? buildMsgEl(item, aMap) : buildEvtEl(item));
+        added = true;
+      }
+
+      count.textContent = String(msgTotal);
+      if (added) feed.scrollTop = feed.scrollHeight;
+    }
+
+    function buildMsgEl(msg, aMap) {
+      const accent   = msg.fromAgentId === 'user' ? '#64748b' : (ACCENT[msg.fromAgentId] ?? '#64748b');
+      const fromName = msg.fromAgentId === 'user' ? 'USER'   : (aMap[msg.fromAgentId]?.name ?? msg.fromAgentId);
+      const toName   = msg.toAgentId   === 'all'  ? '全員'   : msg.toAgentId === 'user' ? 'USER' : (aMap[msg.toAgentId]?.name ?? msg.toAgentId);
+      const typeIcon = { chat:'💬', task:'📋', report:'📊', system:'⚙️' }[msg.type] ?? '·';
+
+      const wrap = el('div', 'text-xs space-y-1');
+
+      // Meta row
+      const meta = el('div', 'flex items-baseline gap-1.5 text-slate-600');
+      meta.style.fontSize = '10px';
+
+      const timeSpan = txt('span', 'tabular-nums opacity-60', fmtTime(msg.timestamp));
+      const fromSpan = txt('span', '', fromName);
+      fromSpan.style.color = accent;
+      const arrowSpan = txt('span', 'opacity-30', '→');
+      const toSpan    = txt('span', 'opacity-60', toName);
+      const iconSpan  = txt('span', 'ml-auto opacity-40', typeIcon);
+      append(meta, timeSpan, fromSpan, arrowSpan, toSpan, iconSpan);
+
+      // Content
+      const body = txt('div', 'pl-2 border-l-2 text-slate-300 leading-relaxed whitespace-pre-wrap break-words', msg.content);
+      body.style.borderColor = `${accent}40`;
+      body.style.fontSize    = '11px';
+
+      append(wrap, meta, body);
+      return wrap;
+    }
+
+    function buildEvtEl(evt) {
+      const accent = ACCENT[evt.agentId] ?? '#64748b';
+      const typeColor = {
+        'agent-start':  '#60a5fa',
+        'agent-done':   '#34d399',
+        'agent-output': '#94a3b8',
+        'task-complete':'#fbbf24',
+        'message':      '#94a3b8',
+        'error':        '#f87171',
+      }[evt.type] ?? '#94a3b8';
+
+      const wrap = el('div', 'text-xs opacity-60 space-y-0.5');
+
+      // Meta row
+      const meta = el('div', 'flex items-baseline gap-1.5');
+      meta.style.fontSize = '10px';
+
+      const timeSpan  = txt('span', 'text-slate-700 tabular-nums', fmtTime(evt.timestamp));
+      const agentSpan = txt('span', '', evt.agentId);
+      agentSpan.style.color = accent;
+
+      const typeBadge = txt('span', 'px-1 rounded', evt.type);
+      typeBadge.style.color      = typeColor;
+      typeBadge.style.background = 'rgba(255,255,255,0.04)';
+      typeBadge.style.fontSize   = '9px';
+
+      append(meta, timeSpan, agentSpan, typeBadge);
+      wrap.appendChild(meta);
+
+      const showBody = evt.type !== 'agent-start' && evt.type !== 'agent-done' && evt.content;
+      if (showBody) {
+        const body = txt('div', 'pl-2 border-l border-dashed border-slate-800 text-slate-500 break-words',
+                         String(evt.content ?? '').slice(0, 300));
+        body.style.fontSize = '11px';
+        wrap.appendChild(body);
+      }
+
+      return wrap;
+    }
+
+    // ── Posts ─────────────────────────────────────────────────────────────
+    const seenPostIds = new Set();
+
+    function renderPosts(posts) {
+      const list  = document.getElementById('posts-list');
+      const empty = document.getElementById('posts-empty');
+
+      if (!posts.length) {
+        list.textContent = '';
+        if (empty) list.appendChild(empty);
+        seenPostIds.clear();
+        return;
+      }
+
+      if (!seenPostIds.size) {
+        list.textContent = '';
+      } else if (empty && empty.parentNode === list) {
+        list.removeChild(empty);
+      }
+
+      for (const post of posts) {
+        if (seenPostIds.has(post.id)) {
+          if (post.status === 'ready') {
+            const ce = document.getElementById(`post-content-${post.id}`);
+            if (ce) ce.textContent = post.content;
+            const be = document.getElementById(`post-badge-${post.id}`);
+            if (be) { be.textContent = '✓ ready'; be.className = 'text-green-500'; be.style.animation = ''; }
+          }
+          continue;
+        }
+        seenPostIds.add(post.id);
+
+        const col  = PLATFORM_COL[post.platform]  ?? '#64748b';
+        const icon = PLATFORM_ICON[post.platform]  ?? '·';
+
+        const card = el('div', 'post-card rounded border border-slate-800/60 bg-slate-900/40 p-3 text-xs');
+        card.setAttribute('role', 'listitem');
+
+        // Card header
+        const cardHead = el('div', 'flex items-center justify-between mb-2');
+
+        const platGrp = el('div', 'flex items-center gap-2');
+        const platIcon = txt('span', 'font-bold', icon);
+        platIcon.style.color = col;
+        const platName = txt('span', 'text-slate-500', post.platform);
+        append(platGrp, platIcon, platName);
+
+        const actionGrp = el('div', 'flex items-center gap-2');
+        const badge = txt('span', post.status === 'ready' ? 'text-green-500' : 'text-yellow-500 anim-pulse',
+                          post.status === 'ready' ? '✓ ready' : '⟳ 生成中');
+        badge.id = `post-badge-${post.id}`;
+
+        const delBtn = el('button', 'text-slate-700 hover:text-red-500 transition-colors');
+        delBtn.textContent = '✕';
+        delBtn.setAttribute('aria-label', '投稿を削除');
+        delBtn.onclick = () => deletePost(post.id);
+
+        append(actionGrp, badge, delBtn);
+        append(cardHead, platGrp, actionGrp);
+
+        // Content
+        const content = txt('div', 'text-slate-300 leading-relaxed whitespace-pre-wrap break-words',
+                            post.status === 'ready' ? post.content : '生成中…');
+        content.id = `post-content-${post.id}`;
+        content.style.fontSize = '11px';
+        if (post.status !== 'ready') content.style.color = '#334155';
+
+        // Footer
+        const footer = el('div', 'mt-2 text-slate-700');
+        footer.style.fontSize = '10px';
+        footer.textContent = `${post.agentName} · ${post.topic} · ${fmtTime(post.timestamp)}`;
+
+        card.id = `post-${post.id}`;
+        append(card, cardHead, content, footer);
+        list.prepend(card);
+      }
+    }
+
+    // ── Orchestrate ───────────────────────────────────────────────────────
+    let isOrchestrating = false;
+
+    async function orchestrate() {
+      if (isOrchestrating) return;
+      const task = document.getElementById('task-input').value.trim();
+      if (!task) return;
+
+      const group = document.getElementById('target-group').value || undefined;
+      isOrchestrating = true;
+      const btn = document.getElementById('orch-btn');
+      btn.disabled    = true;
+      btn.textContent = '…';
+
+      const panel = document.getElementById('sse-panel');
+      const lines = document.getElementById('sse-lines');
+      panel.classList.remove('hidden');
+      lines.textContent = '';
+
+      const addLine = (text, color) => {
+        const line = el('div', 'leading-relaxed break-words');
+        if (color) line.style.color = color;
+        line.textContent = String(text ?? '');
+        lines.appendChild(line);
+        lines.scrollTop = lines.scrollHeight;
+      };
+
+      addLine(`▶ ${task}`, '#c084fc');
+
+      try {
+        const resp = await fetch(`${BASE}/api/company/orchestrate`, {
+          method: 'POST',
+          headers: hdrs(),
+          body: JSON.stringify({ task, targetGroup: group }),
+          signal: AbortSignal.timeout(120_000),
+        });
+
+        if (!resp.ok) {
+          addLine(`Error ${resp.status}`, '#f87171');
+        } else {
+          const reader = resp.body.getReader();
+          const dec    = new TextDecoder();
+          let   buf    = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const parts = buf.split('\n\n');
+            buf = parts.pop() ?? '';
+
+            for (const part of parts) {
+              if (!part.startsWith('data: ')) continue;
+              const raw = part.slice(6).trim();
+              if (raw === '[DONE]') { addLine('✓ 完了', '#34d399'); continue; }
+              try {
+                const evt    = JSON.parse(raw);
+                const accent = ACCENT[evt.agentId] ?? '#64748b';
+                const prefix = { 'agent-start':'▶', 'agent-done':'✓', 'error':'✗' }[evt.type] ?? '·';
+                if (evt.type === 'agent-output') {
+                  addLine(evt.content ?? '', '#cbd5e1');
+                } else {
+                  addLine(`${prefix} [${evt.agentId}] ${evt.content ?? ''}`, accent);
+                }
+              } catch { /* non-JSON */ }
+            }
+          }
+        }
+      } catch (e) {
+        addLine(`Error: ${e instanceof Error ? e.message : String(e)}`, '#f87171');
+      }
+
+      isOrchestrating = false;
+      btn.disabled    = false;
+      btn.textContent = 'GO →';
+      document.getElementById('task-input').value = '';
+      toast('オーケストレーション完了', 'success');
+    }
+
+    function closeSsePanel() {
+      document.getElementById('sse-panel').classList.add('hidden');
+    }
+
+    // ── Generate Posts ────────────────────────────────────────────────────
+    async function generatePosts() {
+      const topicEl = document.getElementById('post-topic');
+      const topic   = topicEl.value.trim();
+      if (!topic) return;
+      topicEl.value = '';
+      toast(`生成中: ${topic}`, 'info');
+
+      try {
+        const r    = await fetch(`${BASE}/api/company/posts`, {
+          method: 'POST',
+          headers: hdrs(),
+          body: JSON.stringify({ topic }),
+        });
+        const data = await r.json();
+        if (Array.isArray(data.posts)) renderPosts(data.posts);
+      } catch (e) {
+        toast(`Error: ${e instanceof Error ? e.message : String(e)}`, 'error');
+      }
+    }
+
+    async function deletePost(id) {
+      try {
+        await fetch(`${BASE}/api/company/posts`, {
+          method: 'DELETE',
+          headers: hdrs(),
+          body: JSON.stringify({ id }),
+        });
+        seenPostIds.delete(id);
+        document.getElementById(`post-${id}`)?.remove();
+        if (!seenPostIds.size) {
+          const list = document.getElementById('posts-list');
+          list.textContent = '';
+          const empty = el('p', 'text-center text-slate-700 text-xs mt-10');
+          empty.id = 'posts-empty';
+          empty.textContent = '投稿を生成してください';
+          list.appendChild(empty);
+        }
+      } catch (e) {
+        toast(`Error: ${e instanceof Error ? e.message : String(e)}`, 'error');
+      }
+    }
+
+    async function resetPosts() {
+      await fetch(`${BASE}/api/company/posts`, { method: 'DELETE', headers: hdrs() }).catch(() => {});
+      seenPostIds.clear();
+      const list = document.getElementById('posts-list');
+      list.textContent = '';
+      const empty = el('p', 'text-center text-slate-700 text-xs mt-10');
+      empty.id = 'posts-empty';
+      empty.textContent = '投稿を生成してください';
+      list.appendChild(empty);
+    }
+
+    async function resetAll() {
+      if (!confirm('メッセージと状態をリセットしますか？')) return;
+      await fetch(`${BASE}/api/company/messages`, { method: 'DELETE', headers: hdrs() }).catch(() => {});
+      document.getElementById('feed').textContent = '';
+      seenIds.clear();
+      msgTotal = 0;
+      document.getElementById('msg-count').textContent = '0';
+      toast('リセット完了', 'info');
+    }
+
+    // ── Chat Modal ────────────────────────────────────────────────────────
+    let chatAgentId = null;
+
+    function openChat(agentId, agentName, accent) {
+      selectedAgentId = agentId;
+      chatAgentId     = agentId;
+      refreshAgentCards();
+
+      document.getElementById('chat-modal')?.remove();
+
+      // Build modal via DOM (no innerHTML with external data)
+      const overlay = el('div', 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm');
+      overlay.id = 'chat-modal';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-label', `${agentName}とのチャット`);
+
+      const panel = el('div', 'w-96 rounded-lg border bg-[#0d0d1c] shadow-2xl flex flex-col');
+      panel.style.borderColor = `${accent}50`;
+      panel.style.maxHeight   = '80vh';
+
+      // Panel header
+      const panelHead = el('div', 'flex items-center justify-between px-4 py-3 border-b border-slate-800/60 flex-shrink-0');
+      const headLeft  = el('div', 'flex items-center gap-2');
+      const agentDot  = el('div', 'w-2 h-2 rounded-full');
+      agentDot.style.background = accent;
+      const agentNameEl = txt('span', 'text-sm font-medium text-slate-200', agentName);
+      append(headLeft, agentDot, agentNameEl);
+
+      const closeBtn = el('button', 'text-slate-600 hover:text-slate-400 text-lg leading-none transition-colors');
+      closeBtn.textContent = '✕';
+      closeBtn.setAttribute('aria-label', 'チャットを閉じる');
+      closeBtn.onclick = closeChat;
+
+      append(panelHead, headLeft, closeBtn);
+
+      // Messages area
+      const chatMsgs = el('div', 'flex-1 overflow-y-auto p-4 space-y-3 min-h-0');
+      chatMsgs.id = 'chat-msgs';
+
+      // Input area
+      const inputArea = el('div', 'flex-shrink-0 border-t border-slate-800/60 p-3 flex gap-2');
+      const chatInput = el('input', 'flex-1 bg-slate-900/80 text-slate-200 text-xs border border-slate-700/60 rounded px-3 py-2 placeholder-slate-700 focus:outline-none focus:border-purple-600 transition-colors');
+      chatInput.id          = 'chat-input';
+      chatInput.type        = 'text';
+      chatInput.placeholder = 'メッセージ…';
+      chatInput.setAttribute('aria-label', 'チャットメッセージ入力');
+      chatInput.onkeydown   = e => { if (e.key === 'Enter') sendChat(); };
+
+      const sendBtn = el('button', 'text-white text-xs px-3 py-2 rounded transition-colors hover:opacity-80');
+      sendBtn.textContent      = '→';
+      sendBtn.style.background = accent;
+      sendBtn.setAttribute('aria-label', '送信');
+      sendBtn.onclick          = sendChat;
+
+      append(inputArea, chatInput, sendBtn);
+      append(panel, panelHead, chatMsgs, inputArea);
+      overlay.appendChild(panel);
+      overlay.onclick = e => { if (e.target === overlay) closeChat(); };
+
+      document.body.appendChild(overlay);
+      chatInput.focus();
+    }
+
+    function closeChat() {
+      document.getElementById('chat-modal')?.remove();
+      selectedAgentId = null;
+      chatAgentId     = null;
+      refreshAgentCards();
+    }
+
+    async function sendChat() {
+      const input = document.getElementById('chat-input');
+      const msg   = input?.value.trim();
+      if (!msg || !chatAgentId) return;
+      input.value = '';
+
+      const chatMsgs = document.getElementById('chat-msgs');
+
+      // User bubble
+      const userWrap = el('div', 'flex justify-end');
+      const userBubble = txt('div', 'bg-slate-800 text-slate-200 rounded px-3 py-2 max-w-[80%] text-xs leading-relaxed break-words', msg);
+      append(userWrap, userBubble);
+      chatMsgs.appendChild(userWrap);
+
+      // Thinking indicator
+      const thinkEl = txt('span', 'text-slate-600 text-xs anim-pulse', '思考中…');
+      const thinkWrap = el('div', 'flex gap-2 items-center');
+      thinkWrap.appendChild(thinkEl);
+      chatMsgs.appendChild(thinkWrap);
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+      try {
+        const r    = await fetch(`${BASE}/api/company/chat`, {
+          method: 'POST',
+          headers: hdrs(),
+          body: JSON.stringify({ agentId: chatAgentId, message: msg }),
+        });
+        const data = await r.json();
+        thinkWrap.remove();
+
+        if (data.content) {
+          const accent  = ACCENT[chatAgentId] ?? '#64748b';
+          const agentWrap = el('div', 'flex gap-2');
+          const bar = el('div', 'w-0.5 rounded-full flex-shrink-0');
+          bar.style.background = accent;
+          const agentTxt = txt('div', 'text-slate-300 text-xs leading-relaxed break-words', data.content);
+          append(agentWrap, bar, agentTxt);
+          chatMsgs.appendChild(agentWrap);
+        } else if (data.error) {
+          chatMsgs.appendChild(txt('span', 'text-red-500 text-xs', `Error: ${data.error}`));
+        }
+      } catch (e) {
+        thinkWrap.remove();
+        chatMsgs.appendChild(txt('span', 'text-red-500 text-xs', `Error: ${e instanceof Error ? e.message : String(e)}`));
+      }
+
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    }
+
+    // ── Toast ─────────────────────────────────────────────────────────────
+    function toast(msg, type) {
+      const colors = {
+        info:    'border-blue-800/60 text-blue-300',
+        success: 'border-green-800/60 text-green-300',
+        error:   'border-red-800/60 text-red-400',
+      };
+      const e = txt('div',
+        `toast text-xs px-3 py-2 rounded border bg-[#0d0d1c] pointer-events-auto ${colors[type] ?? colors.info}`,
+        msg);
+      document.getElementById('toasts').appendChild(e);
+      setTimeout(() => { e.style.opacity = '0'; e.style.transition = 'opacity 0.3s'; }, 2700);
+      setTimeout(() => e.remove(), 3000);
+    }
+
+    // ── Utils ─────────────────────────────────────────────────────────────
+    function fmtTime(ts) {
+      return new Date(ts).toLocaleTimeString('ja-JP', { hour12: false });
+    }
+
+    // ── Polling ───────────────────────────────────────────────────────────
+    async function pollMessages() {
+      try {
+        const r = await fetch(`${BASE}/api/company/messages`, {
+          headers: hdrs(),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        renderAgents(data.agents ?? []);
+        renderMessages(data.messages ?? [], data.events ?? [], data.agents ?? []);
+      } catch { /* offline */ }
+    }
+
+    async function pollPosts() {
+      try {
+        const r = await fetch(`${BASE}/api/company/posts`, {
+          headers: hdrs(),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data.posts?.length) renderPosts(data.posts);
+      } catch { /* offline */ }
+    }
+
+    // ── Tab Switching ─────────────────────────────────────────────────────
+    let activeTab = 'feed';
+
+    function switchTab(tab) {
+      activeTab = tab;
+      const isFeed = tab === 'feed';
+
+      document.getElementById('panel-feed').classList.toggle('hidden', !isFeed);
+      document.getElementById('panel-claude').classList.toggle('hidden', isFeed);
+
+      const tabFeed   = document.getElementById('tab-feed');
+      const tabClaude = document.getElementById('tab-claude');
+
+      tabFeed.classList.toggle('text-slate-400',   isFeed);
+      tabFeed.classList.toggle('border-purple-500', isFeed);
+      tabFeed.classList.toggle('text-slate-600',   !isFeed);
+      tabFeed.classList.toggle('border-transparent',!isFeed);
+      tabFeed.setAttribute('aria-selected', String(isFeed));
+
+      tabClaude.classList.toggle('text-slate-400',   !isFeed);
+      tabClaude.classList.toggle('border-purple-500', !isFeed);
+      tabClaude.classList.toggle('text-slate-600',    isFeed);
+      tabClaude.classList.toggle('border-transparent', isFeed);
+      tabClaude.setAttribute('aria-selected', String(!isFeed));
+
+      if (!isFeed) {
+        setTimeout(() => document.getElementById('claude-input')?.focus(), 50);
+      }
+    }
+
+    // ── Claude Code ────────────────────────────────────────────────────────
+    let claudeSessionId   = null;
+    let isRunningClaude   = false;
+
+    async function runClaude() {
+      if (isRunningClaude) return;
+      const input  = document.getElementById('claude-input');
+      const prompt = input?.value.trim();
+      if (!prompt) return;
+      input.value = '';
+
+      // Hide welcome hint
+      document.getElementById('claude-welcome')?.remove();
+
+      isRunningClaude = true;
+      const runBtn = document.getElementById('claude-run-btn');
+      if (runBtn) { runBtn.disabled = true; runBtn.textContent = '…'; }
+
+      const output = document.getElementById('claude-output');
+
+      // Prompt block
+      const promptBlock = el('div', 'space-y-1 pb-2 border-b border-slate-800/40');
+      const promptLine  = el('div', 'flex gap-1.5 items-start');
+      const promptIcon  = txt('span', 'text-purple-500 flex-shrink-0', '❯');
+      const promptTxt   = txt('span', 'text-slate-200 break-words leading-relaxed', prompt);
+      append(promptLine, promptIcon, promptTxt);
+      promptBlock.appendChild(promptLine);
+      output.appendChild(promptBlock);
+
+      // Response block
+      const respBlock   = el('div', 'pl-3 border-l-2 space-y-0.5');
+      respBlock.style.borderColor = '#7c3aed55';
+      const respContent = txt('div', 'text-slate-400 leading-relaxed whitespace-pre-wrap break-words', '');
+      const respCursor  = el('span', 'cursor text-slate-600');
+      append(respBlock, respContent, respCursor);
+      output.appendChild(respBlock);
+      output.scrollTop = output.scrollHeight;
+
+      try {
+        const resp = await fetch(`${BASE}/api/claude-code`, {
+          method: 'POST',
+          headers: hdrs(),
+          body: JSON.stringify({
+            content: prompt,
+            ...(claudeSessionId ? { sessionId: claudeSessionId } : {}),
+          }),
+          signal: AbortSignal.timeout(120_000),
+        });
+
+        if (!resp.ok) {
+          respContent.textContent = `Error ${resp.status}: ${resp.statusText}`;
+          respContent.style.color = '#f87171';
+        } else {
+          const reader = resp.body.getReader();
+          const dec    = new TextDecoder();
+          let   buf    = '';
+          let   accumulated = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const parts = buf.split('\n\n');
+            buf = parts.pop() ?? '';
+
+            for (const part of parts) {
+              if (!part.startsWith('data: ')) continue;
+              const raw = part.slice(6).trim();
+              try {
+                const evt = JSON.parse(raw);
+                if (evt.type === 'chunk' && evt.content) {
+                  accumulated += evt.content;
+                  respContent.textContent = accumulated;
+                  output.scrollTop = output.scrollHeight;
+                } else if (evt.type === 'done') {
+                  if (evt.sessionId) {
+                    claudeSessionId = evt.sessionId;
+                    const sidEl = document.getElementById('claude-session-id');
+                    if (sidEl) sidEl.textContent = evt.sessionId.slice(0, 24) + '…';
+                  }
+                  if (!accumulated && evt.assistantMessage?.content) {
+                    accumulated = evt.assistantMessage.content;
+                    respContent.textContent = accumulated;
+                  }
+                } else if (evt.type === 'error') {
+                  respContent.textContent = `Error: ${evt.error}`;
+                  respContent.style.color = '#f87171';
+                }
+              } catch { /* non-JSON */ }
+            }
+          }
+
+          if (!accumulated) {
+            respContent.textContent = '(no output)';
+            respContent.style.color = '#475569';
+          }
+        }
+      } catch (e) {
+        respContent.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+        respContent.style.color = '#f87171';
+      }
+
+      respCursor.remove();
+      isRunningClaude = false;
+      if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'RUN →'; }
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearClaude() {
+      claudeSessionId = null;
+      const sidEl = document.getElementById('claude-session-id');
+      if (sidEl) sidEl.textContent = '—';
+
+      const output  = document.getElementById('claude-output');
+      output.textContent = '';
+
+      // Re-add welcome hint
+      const hint = el('div', 'text-slate-700 leading-relaxed space-y-1 mt-4 px-1');
+      hint.id = 'claude-welcome';
+      [
+        '$ claude-code --relay',
+        '─────────────────────────────',
+        'プロンプトを入力してください。',
+        'セッションは会話を継続します。',
+      ].forEach((line, i) => {
+        const d = txt('div', i === 1 ? 'text-slate-800' : i === 3 ? 'text-slate-800' : '', line);
+        hint.appendChild(d);
+      });
+      output.appendChild(hint);
+    }
+
+    // ── Keyboard shortcuts ────────────────────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeChat();
+    });
+
+    // ── Init ──────────────────────────────────────────────────────────────
+    checkHealth();
+    setInterval(checkHealth, 10_000);
+    pollMessages();
+    setInterval(pollMessages, 2_000);
+    pollPosts();
+    setInterval(pollPosts, 3_000);
+  </script>
+</body>
+</html>

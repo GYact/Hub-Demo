@@ -1,0 +1,68 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@supabase/functions-js@*": "2.98.0"
+  },
+  "jsr": {
+    "@supabase/functions-js@2.98.0": {
+      "integrity": "1925444dea4f040f8e840a31067aa06315fcb658f5abf2161504763d220d00e8"
+    }
+  },
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.98.0",
+    "https://esm.sh/iceberg-js@^0.8.1?target=denonext": "https://esm.sh/iceberg-js@0.8.1?target=denonext"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/auth-js@2.98.0/denonext/auth-js.mjs": "1f94c714fe31a7e859825f50bd5a4971458ca69a6477a543665b7d4d06dfe0b9",
+    "https://esm.sh/@supabase/functions-js@2.98.0/denonext/functions-js.mjs": "65f1bc17c5af85234d9bfbc0f8a14c452b0d516d62dd23872662ec08adf91998",
+    "https://esm.sh/@supabase/postgrest-js@2.98.0/denonext/postgrest-js.mjs": "188a13abc25b0f5890de4bd3c3f2211e287091cc0434cea290ee1c7d06827e4a",
+    "https://esm.sh/@supabase/realtime-js@2.98.0/denonext/realtime-js.mjs": "c7490d09c983cfccf2f72c60bf8e6f45b9274650c27d3723b4a1c6386df201ce",
+    "https://esm.sh/@supabase/storage-js@2.98.0/denonext/storage-js.mjs": "8d3b1e4c8777511f1d2c542130203d6a3a627d93461846f727a912ca79ecfdac",
+    "https://esm.sh/@supabase/supabase-js@2.98.0": "7c91584aa8d7c3b272be04122a907e00a7028a20d0eaf5e40b2eb1eed10f06b3",
+    "https://esm.sh/@supabase/supabase-js@2.98.0/denonext/supabase-js.mjs": "50d9cef74b1e27d0536344733e386089230db8c89d2a2918a1c882a1b3262b2e",
+    "https://esm.sh/iceberg-js@0.8.1/denonext/iceberg-js.mjs": "d839d81a2e3966500ca2cdd0c1cb458e9608bacfc91f7bb67a69b2e878dcdb4f",
+    "https://esm.sh/iceberg-js@0.8.1?target=denonext": "58c849d7fe2bf4eca4a84eb501e83c161a7d8c34ca1bec15a962b3bec3062633",
+    "https://esm.sh/tslib@2.8.1/denonext/tslib.mjs": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@dnd-kit/core@^6.3.1",
+        "npm:@dnd-kit/sortable@10",
+        "npm:@dnd-kit/utilities@^3.2.2",
+        "npm:@supabase/supabase-js@^2.89.0",
+        "npm:@tailwindcss/typography@~0.5.19",
+        "npm:@types/dompurify@^3.2.0",
+        "npm:@types/node@^22.14.0",
+        "npm:@types/react-dom@19",
+        "npm:@types/react@19",
+        "npm:@vitejs/plugin-react@5",
+        "npm:autoprefixer@^10.4.20",
+        "npm:dexie@^4.0.10",
+        "npm:dompurify@^3.3.1",
+        "npm:fancy-canvas@2.1.0",
+        "npm:lightweight-charts@^5.1.0",
+        "npm:lucide-react@0.562",
+        "npm:node-emoji@^2.2.0",
+        "npm:postcss@^8.5.1",
+        "npm:react-dom@^19.2.3",
+        "npm:react-markdown@^9.0.3",
+        "npm:react-router-dom@^7.11.0",
+        "npm:react@^19.2.3",
+        "npm:remark-breaks@4",
+        "npm:remark-gfm@^4.0.1",
+        "npm:tailwindcss@^3.4.17",
+        "npm:typescript@~5.8.2",
+        "npm:vite-plugin-pwa@^1.2.0",
+        "npm:vite@^6.2.0",
+        "npm:workbox-cacheable-response@^7.4.0",
+        "npm:workbox-core@^7.4.0",
+        "npm:workbox-expiration@^7.4.0",
+        "npm:workbox-precaching@^7.4.0",
+        "npm:workbox-routing@^7.4.0",
+        "npm:workbox-strategies@^7.4.0",
+        "npm:workbox-window@^7.4.0"
+      ]
+    }
+  }
+}
