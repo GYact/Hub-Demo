@@ -247,6 +247,7 @@ export const useGoogleCalendar = () => {
   // Fetch all calendars
   const fetchCalendars = useCallback(
     async (silent = false) => {
+      if (isDemoMode) return;
       if (!googleAccessToken) {
         setError(
           "No Google access token available. Please connect Google Services.",
@@ -321,6 +322,7 @@ export const useGoogleCalendar = () => {
       timeMin?: string,
       timeMax?: string,
     ): Promise<CalendarEvent[]> => {
+      if (isDemoMode) return [];
       if (!googleAccessToken) {
         throw new Error(
           "No Google access token available. Please connect Google Services.",
@@ -391,6 +393,7 @@ export const useGoogleCalendar = () => {
       timeMax?: string,
       silent = false,
     ) => {
+      if (isDemoMode) return null;
       if (!googleAccessToken) {
         setError(
           "No Google access token available. Please connect Google Services.",
@@ -426,6 +429,7 @@ export const useGoogleCalendar = () => {
       timeMax?: string,
       silent = false,
     ) => {
+      if (isDemoMode) return null;
       if (!googleAccessToken) {
         setError(
           "No Google access token available. Please connect Google Services.",
@@ -487,6 +491,7 @@ export const useGoogleCalendar = () => {
       event: CreateEventInput,
       sendUpdates?: "all" | "externalOnly" | "none",
     ) => {
+      if (isDemoMode) return null;
       if (!googleAccessToken) {
         setError("No Google access token available");
         return null;
@@ -575,6 +580,7 @@ export const useGoogleCalendar = () => {
       updates: Partial<CreateEventInput>,
       sendUpdates?: "all" | "externalOnly" | "none",
     ) => {
+      if (isDemoMode) return null;
       if (!googleAccessToken) {
         setError("No Google access token available");
         return null;
@@ -638,6 +644,7 @@ export const useGoogleCalendar = () => {
       instanceStartDate: string,
       sendUpdates?: "all" | "externalOnly" | "none",
     ) => {
+      if (isDemoMode) return null;
       if (!googleAccessToken) {
         setError("No Google access token available");
         return null;
@@ -813,6 +820,7 @@ export const useGoogleCalendar = () => {
       recurringEventId?: string,
       instanceStartDate?: string,
     ) => {
+      if (isDemoMode) return null;
       if (!googleAccessToken) {
         setError("No Google access token available");
         return false;
@@ -978,6 +986,7 @@ export const useGoogleCalendar = () => {
       eventId: string,
       response: RSVPStatus,
     ): Promise<CalendarEvent | null> => {
+      if (isDemoMode) return null;
       if (!googleAccessToken) {
         setError("No Google access token available");
         return null;
@@ -1053,6 +1062,7 @@ export const useGoogleCalendar = () => {
   // Quick add event using natural language
   const quickAddEvent = useCallback(
     async (calendarId: string, text: string) => {
+      if (isDemoMode) return null;
       if (!googleAccessToken) {
         setError("No Google access token available");
         return null;
@@ -1412,6 +1422,7 @@ export const useGoogleCalendar = () => {
    */
   const confirmTentativeEvent = useCallback(
     async (calendarId: string, event: CalendarEvent): Promise<boolean> => {
+      if (isDemoMode) return false;
       if (!googleAccessToken) {
         setError("No Google access token available");
         return false;
